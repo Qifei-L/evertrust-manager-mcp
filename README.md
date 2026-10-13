@@ -4,6 +4,8 @@
 
 The repository includes a Node.js 24 service, Dockerfile, `railway.json`, persistent SQLite storage and GitHub CI. Follow [the Railway guide](docs/RAILWAY.md) to configure a volume, secrets, Manager API URL and GitHub autodeploys. Start with `npm run dev` locally or `npm start` with configured environment variables. The Railway adapter uses a single-owner Bearer/Basic credential; it does not trust public identity headers. Source exports do not contain your existing cloud connections.
 
+Reads and accounting mutations now use separate execution modules and event loops within this same Railway deployment. A long-lived write thread serializes mutable tool calls, shares the encrypted local database, preserves existing approval/read-back checks and never automatically replays failed writes. Concurrent write calls are rejected before dispatch. This first stage keeps the existing endpoint and volume; it is not yet two independently deployed services or a new durable batch API. See the deployment guide for limits and executor diagnostics.
+
 Private Manager.io connector with encrypted, user-owned connections, Manager-native COA changes and existing party/business tools. The English connection page groups tokens by company and keeps external table imports optional.
 
 ## Release policy

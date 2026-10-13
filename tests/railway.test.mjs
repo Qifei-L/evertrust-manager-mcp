@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -164,4 +164,38 @@ test('company tokens stay encrypted on disk and connections persist after servic
     const saved = await (await realFetch(`${app.origin}/api/connections`, { headers: bearer })).json();
     assert.equal(saved.connections[0].connection_id, connection.connection_id);
   } finally { globalThis.fetch = realFetch; if (app) await app.shutdown(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('write thread reads encrypted tasks from the same volume and gateway sees saved changes immediately', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'managerio-write-thread-'));
+  const app = await start(config(dir));
+  try {
+    assert.equal((await fetch(`${app.origin}/api/execution`)).status, 401);
+    let ready = false;
+    for (let i = 0; i < 100; i++) {
+      const status = await (await fetch(`${app.origin}/api/execution`, { headers: bearer })).json();
+      if (status.writes.ready) { ready = true; break; }
+      await new Promise(done => setTimeout(done, 20));
+    }
+    assert(ready);
+    const taskId = randomUUID();
+    const namespace = createHash('sha256').update('railway-owner').digest('hex');
+    const task = { id: taskId, connection_id: randomUUID(), business_name: 'Fixture Company', token_name: null, label: '', status: 'awaiting_confirmation', created_at: new Date().toISOString(), expires_at: new Date(Date.now()+86400000).toISOString(), approval_hash: 'a'.repeat(64), changes: [], summary: { total: 0, succeeded: 0, failed: 0, pending: 0 } };
+    const aes = await crypto.subtle.importKey('raw', Buffer.from(key, 'hex'), 'AES-GCM', false, ['encrypt']);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aes, new TextEncoder().encode(JSON.stringify(task)));
+    const objectKey = `coa-tasks/${namespace}/${taskId}.json`;
+    await app.bucket.put(objectKey, JSON.stringify({ iv: [...iv], cipher: [...new Uint8Array(cipher)] }));
+    const cancelled = await rpc(app.origin, 'tools/call', { name: 'cancel_coa_edit_task', arguments: { task_id: taskId } });
+    assert.equal(cancelled.headers.get('x-execution-lane'), 'write');
+    const outcome = await cancelled.json();
+    assert.equal(outcome.result.isError, false, JSON.stringify(outcome));
+    assert.equal(outcome.result.structuredContent.status, 'cancelled');
+    const read = await rpc(app.origin, 'tools/call', { name: 'get_coa_edit_task', arguments: { task_id: taskId } });
+    assert.equal(read.headers.get('x-execution-lane'), 'read');
+    assert.equal((await read.json()).result.structuredContent.status, 'cancelled');
+    const metrics = await (await fetch(`${app.origin}/api/performance`, { headers: bearer })).json();
+    assert(metrics.recent.some(item => item.execution_lane === 'write' && item.crypto_calls >= 2 && item.storage_calls >= 3));
+    assert(!(await (await app.bucket.get(objectKey)).text()).includes('Fixture Company'));
+  } finally { await app.shutdown(); rmSync(dir, { recursive: true, force: true }); }
 });

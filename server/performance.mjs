@@ -34,6 +34,19 @@ export class PerformanceMonitor {
   }
   increment(name) { const metric = context.getStore(); if (metric) metric[name]++; }
   responseBytes(bytes) { const metric = context.getStore(); if (metric) metric.response_bytes = bytes; }
+  lane(value) { const metric = context.getStore(); if (metric) metric.execution_lane = value; }
+  async execution(operation) {
+    const metrics = { storage_ms: 0, crypto_ms: 0, manager_ms: 0, storage_calls: 0, crypto_calls: 0, manager_calls: 0, key_imports: 0 };
+    const value = await context.run(metrics, operation);
+    return { value, metrics };
+  }
+  mergeExecution(metrics) {
+    const target = context.getStore();
+    if (!target || !metrics) return;
+    for (const name of ['storage_ms','crypto_ms','manager_ms','storage_calls','crypto_calls','manager_calls','key_imports']) {
+      if (Number.isFinite(metrics[name]) && metrics[name] >= 0) target[name] += metrics[name];
+    }
+  }
   bucket(bucket) {
     return Object.fromEntries(['get','put','list','delete'].map(name => [name, (...args) => {
       this.increment('storage_calls');

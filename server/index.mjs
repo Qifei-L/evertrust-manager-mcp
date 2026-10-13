@@ -2,10 +2,11 @@ import { createServer } from 'node:http';
 import { createHash, timingSafeEqual, randomBytes } from 'node:crypto';
 import { resolve, relative, isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import worker, { configureManagerApi } from '../worker/index.js';
 import { SqliteBucket } from './storage.mjs';
 import { loginPage, connectionsPage } from './pages.mjs';
 import { PerformanceMonitor } from './performance.mjs';
+import { executionLane, WriteExecutor } from './execution.mjs';
+import { ReadService } from './read-service.mjs';
 
 export function configuration(env = process.env) {
   const token = env.APP_AUTH_TOKEN;
@@ -54,8 +55,9 @@ function html(res, content) {
 }
 
 export function createApplication(config, bucket = new SqliteBucket(join(config.dataDir, 'managerio.sqlite')), monitor = new PerformanceMonitor()) {
-  configureManagerApi(config.managerBase, (...args) => monitor.managerFetch(...args));
   bucket.assertEncryptionKey(config.key);
+  const reads = new ReadService(config, bucket, monitor);
+  const writes = new WriteExecutor(config);
   let stopping = false;
   const sessions = new Map();
   const lifetime = 8 * 60 * 60 * 1000;
@@ -103,6 +105,7 @@ export function createApplication(config, bucket = new SqliteBucket(join(config.
       }
       if (req.headers.origin && req.headers.origin !== config.origin) return reply(res, 403, { error: 'Request origin is not allowed.' });
       if (url.pathname === '/api/performance' && req.method === 'GET') return reply(res, 200, monitor.summary());
+      if (url.pathname === '/api/execution' && req.method === 'GET') return reply(res, 200, { mode: 'separate-write-thread', writes: writes.status() });
       if (url.pathname === '/logout' && req.method === 'POST') {
         if (req.headers.origin !== config.origin) return reply(res, 403, { error: 'Request origin is not allowed.' });
         if (id) sessions.delete(id);
@@ -127,7 +130,16 @@ export function createApplication(config, bucket = new SqliteBucket(join(config.
         parts.push(part);
       }
       const request = new Request(url, { method: req.method, headers, ...(!['GET', 'HEAD'].includes(req.method) ? { body: Buffer.concat(parts) } : {}) });
-      const response = await worker.fetch(request, { BUCKET: monitor.bucket(bucket), PERFORMANCE: monitor, MANAGER_TOKEN_ENCRYPTION_KEY: config.key });
+      const lane = await executionLane(request);
+      monitor.lane(lane);
+      let response;
+      if (lane === 'write') {
+        const result = await writes.execute(request);
+        response = result.response;
+        monitor.mergeExecution(result.metrics);
+      } else {
+        response = await reads.fetch(request);
+      }
       const responseBody = Buffer.from(await response.arrayBuffer());
       monitor.responseBytes(responseBody.length);
       const responseHeaders = Object.fromEntries(response.headers);
@@ -135,6 +147,7 @@ export function createApplication(config, bucket = new SqliteBucket(join(config.
       responseHeaders['x-content-type-options'] = 'nosniff';
       responseHeaders['referrer-policy'] = 'no-referrer';
       responseHeaders['server-timing'] = monitor.timing();
+      responseHeaders['x-execution-lane'] = lane;
       res.writeHead(response.status, responseHeaders);
       res.end(req.method === 'HEAD' ? undefined : responseBody);
     } catch {
@@ -149,8 +162,9 @@ export function createApplication(config, bucket = new SqliteBucket(join(config.
   server.setTimeout(180_000);
   return { server, bucket, shutdown: () => {
     stopping = true;
-    return new Promise((done, reject) => server.close(error => {
-      bucket.close();
+    return new Promise((done, reject) => server.close(async error => {
+      try { await writes.close(); bucket.close(); }
+      catch (failure) { reject(failure); return; }
       if (error) reject(error); else done();
     }));
   } };

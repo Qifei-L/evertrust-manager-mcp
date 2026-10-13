@@ -38,6 +38,16 @@ This Railway version is a **single-owner service**: everyone holding the service
 
 ## Continuous delivery
 
+### Read/write execution separation
+
+The existing Railway service keeps one public MCP address, one replica and its existing volume. `server/read-service.mjs` handles reads and gateway connection management. `server/write-service.mjs` runs in a separate long-lived Node worker thread with its own event loop and SQLite handle. `server/execution.mjs` routes MCP tool calls by their deployed `readOnlyHint`; unknown or mutable tools enter the write lane. Browser COA mutations also enter that lane. Authentication and owner identity are checked by the gateway before dispatch.
+
+Only one write-lane call executes at a time across all companies. Additional concurrent calls receive HTTP 503 with `retryable:true` before dispatch. Startup, crash and ambiguous timeout failures return `retryable:false` with a reconciliation notice; no financial operation is automatically replayed. An executor timeout does not cancel an upstream write or free its capacity slot: it remains occupied until the actual result or thread exit. Graceful server shutdown drains HTTP requests before terminating the executor. Existing encrypted task checkpoints, approval hashes, leases and read-back checks remain authoritative. This is execution isolation, not a new durable batch queue or unattended job system.
+
+Both handles use the same local WAL database. Persisted snapshot-generation invalidation is visible across threads; write preconditions and read-back still use fresh Manager reads. Authenticated `GET /api/execution` reports executor readiness/capacity. Forwarded responses have `X-Execution-Lane: read|write`; performance samples include `execution_lane` and merged executor timings. Connection setup/preferences stay in the gateway and may modify local storage despite their `read` execution-lane label.
+
+This release does **not** create two independently deployed Railway services. It isolates write-side synchronous JavaScript work; it does not accelerate Manager's network requests, eliminate SQLite contention or protect against a whole-container failure. Moving to independent containers requires shared durable storage (for example PostgreSQL); a Railway volume/WAL file must not be treated as a distributed database. No Redis or new infrastructure is required for this stage. See [Node worker threads](https://nodejs.org/docs/latest-v24.x/api/worker_threads.html) and [SQLite WAL constraints](https://sqlite.org/wal.html).
+
 ### Performance inspection
 
 Authenticated `GET /api/performance` reports the last 500 completed requests in the current process, p50/p95 server duration and 30 recent samples. Railway logs receive numeric request/storage/crypto/Manager durations and call counts. Worker responses include `Server-Timing`. No credentials, request parameters, company IDs, document contents or upstream response bodies are logged. The metrics window resets on restart; it is not a durable monitoring service. Operation durations can overlap during parallel work and are not necessarily additive. Manager duration includes fetch headers and reading its response body; network time between the client and Railway is outside server duration.

@@ -1113,4 +1113,6 @@ if(u.pathname==='/mcp'&&request.method==='POST'){const m=await request.json();if
 return json({error:'Not found.'},404)
 }catch(e){console.error('Evertrust Books request failed',e.name);return json({error:e instanceof AppError?e.message:'The request failed. Please refresh and retry.'},e.status||500)}}};
 
+// Routing uses the deployed contracts, never a second hand-maintained tool list.
+export function isReadOnlyTool(name) { return tools.find(tool => tool.name === name)?.annotations?.readOnlyHint === true; }
 export { reportWorkbook, reportRows };
