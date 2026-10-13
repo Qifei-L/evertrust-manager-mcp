@@ -1,9 +1,10 @@
 import { createServer } from 'node:http';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual, randomBytes } from 'node:crypto';
 import { resolve, relative, isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import worker, { configureManagerApi } from '../worker/index.js';
 import { SqliteBucket } from './storage.mjs';
+import { loginPage, connectionsPage } from './pages.mjs';
 
 export function configuration(env = process.env) {
   const token = env.APP_AUTH_TOKEN;
@@ -46,10 +47,20 @@ function reply(res, status, body, headers = {}) {
   res.end(JSON.stringify(body));
 }
 
+function html(res, content) {
+  res.writeHead(200, { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" });
+  res.end(content);
+}
+
 export function createApplication(config, bucket = new SqliteBucket(join(config.dataDir, 'managerio.sqlite'))) {
   configureManagerApi(config.managerBase);
   bucket.assertEncryptionKey(config.key);
   let stopping = false;
+  const sessions = new Map();
+  const lifetime = 8 * 60 * 60 * 1000;
+  const cookieName = 'evertrust_session';
+  const cookie = (value, maxAge) => `${cookieName}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${config.origin.startsWith('https:') ? '; Secure' : ''}`;
+  const sessionId = req => (req.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith(cookieName+'='))?.slice(cookieName.length+1);
   const server = createServer(async (req, res) => {
     try {
       // Build links and CSRF checks from configured origin, never from Host/forwarded headers.
@@ -60,10 +71,42 @@ export function createApplication(config, bucket = new SqliteBucket(join(config.
         return reply(res, stopping || !bucket.healthy() ? 503 : 200, { status: stopping ? 'stopping' : 'ok' });
       }
       if (stopping) return reply(res, 503, { error: 'Service is stopping' });
-      if (!authenticated(req.headers.authorization, config.token)) {
-        return reply(res, 401, { error: 'Authentication required' }, url.pathname === '/mcp' ? {} : { 'WWW-Authenticate': 'Basic realm="Evertrust Books", charset="UTF-8"' });
+      const now = Date.now();
+      for (const [id, expires] of sessions) if (expires <= now) sessions.delete(id);
+      const id = sessionId(req);
+      const sessionActive = !!id && sessions.has(id);
+      const credentialActive = authenticated(req.headers.authorization, config.token);
+      // Browser entry uses its explicit login session, not a cached Basic-auth challenge.
+      const browserEntry = url.pathname === '/' || url.pathname === '/login';
+      const loggedIn = sessionActive || (credentialActive && (!browserEntry || req.headers.authorization?.startsWith('Bearer ')));
+      if (url.pathname === '/login' && req.method === 'GET') {
+        if (loggedIn) { res.writeHead(303, { Location: '/', 'Cache-Control': 'no-store' }); return res.end(); }
+        return html(res, loginPage);
+      }
+      if (url.pathname === '/login' && req.method === 'POST') {
+        if (req.headers.origin !== config.origin) return reply(res, 403, { error: 'Request origin is not allowed.' });
+        let body = '', bytes = 0;
+        for await (const part of req) { bytes += part.length; if (bytes > 4096) return reply(res, 413, { error: 'Request body too large' }); body += part.toString('utf8'); }
+        let password;
+        try { password = JSON.parse(body).password; } catch { return reply(res, 400, { error: 'Invalid login request' }); }
+        if (typeof password !== 'string' || !equal(password, config.token)) return reply(res, 401, { error: 'Incorrect password' });
+        if (sessions.size >= 500) return reply(res, 503, { error: 'Too many active sessions' });
+        const newId = randomBytes(32).toString('hex');
+        if (id) sessions.delete(id);
+        sessions.set(newId, now + lifetime);
+        return reply(res, 200, { signed_in: true }, { 'Set-Cookie': cookie(newId, lifetime/1000) });
+      }
+      if (!loggedIn) {
+        if (url.pathname === '/' && req.method === 'GET') { res.writeHead(303, { Location: '/login', 'Cache-Control': 'no-store' }); return res.end(); }
+        return reply(res, 401, { error: 'Authentication required' });
       }
       if (req.headers.origin && req.headers.origin !== config.origin) return reply(res, 403, { error: 'Request origin is not allowed.' });
+      if (url.pathname === '/logout' && req.method === 'POST') {
+        if (req.headers.origin !== config.origin) return reply(res, 403, { error: 'Request origin is not allowed.' });
+        if (id) sessions.delete(id);
+        return reply(res, 200, { signed_out: true }, { 'Set-Cookie': cookie('', 0) });
+      }
+      if (url.pathname === '/' && req.method === 'GET') return html(res, connectionsPage);
       if (url.pathname === '/mcp' && req.method !== 'POST') return reply(res, 405, { error: 'This stateless MCP endpoint accepts POST only.' }, { Allow: 'POST' });
       const headers = new Headers();
       for (const [key, value] of Object.entries(req.headers)) {

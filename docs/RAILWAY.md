@@ -29,7 +29,7 @@ The database records an encryption-key fingerprint. A changed encryption key blo
 
 ## Connect
 
-- Open `/` in a browser. HTTP Basic login: username `admin`, password `APP_AUTH_TOKEN`. Add each company's Manager access token using the existing connection page.
+- Open `/` in a browser. The dedicated `/login` page asks for the existing `APP_AUTH_TOKEN` as its password. Login creates an eight-hour HttpOnly, SameSite=Strict cookie (Secure on HTTPS). Sign out revokes the session. Server restarts require signing in again; company connections stay in the volume. The simple white and dark-green workspace manages connections only; COA tools remain available through MCP.
 - MCP endpoint: `https://your-service.up.railway.app/mcp`. In a client supporting authenticated remote Streamable HTTP, configure the header `Authorization: Bearer YOUR_APP_AUTH_TOKEN`. Do not put secrets in query strings.
 - The MCP endpoint is stateless: POST JSON-RPC with JSON responses and 202 notifications. GET returns 405; no SSE subscription or session ID is required. OAuth login and automatic client registration are not implemented. A client must support explicitly configured authentication headers.
 - `/healthz` returns only service readiness, without authentication. All connection, accounting and MCP routes require authentication. Caller-supplied `oai-authenticated-user-id` is discarded.

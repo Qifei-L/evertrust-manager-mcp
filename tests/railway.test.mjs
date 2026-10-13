@@ -4,6 +4,8 @@ import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Script } from 'node:vm';
+import { loginPage, connectionsPage } from '../server/pages.mjs';
 import { configuration, createApplication } from '../server/index.mjs';
 import { SqliteBucket } from '../server/storage.mjs';
 
@@ -70,8 +72,8 @@ test('HTTP authentication, spoofed identity, CSRF, stateless MCP and health chec
     assert.equal((await fetch(`${app.origin}/healthz`)).status, 200);
     const denied = await fetch(`${app.origin}/api/connections`, { headers: { 'oai-authenticated-user-id': 'railway-owner' } });
     assert.equal(denied.status, 401);
-    assert.match(denied.headers.get('www-authenticate'), /Basic/);
-    assert.equal((await fetch(`${app.origin}/`, { headers: basic })).status, 200);
+    assert.equal(denied.headers.get('www-authenticate'), null);
+    assert.equal((await fetch(`${app.origin}/`, { headers: bearer })).status, 200);
     const namespace = (await import('node:crypto')).createHash('sha256').update('victim').digest('hex');
     await app.bucket.put(`preferences/${namespace}.json`, '{"id":"private"}');
     const listing = await fetch(`${app.origin}/api/connections`, { headers: { ...bearer, 'oai-authenticated-user-id': 'victim' } });
@@ -89,6 +91,45 @@ test('HTTP authentication, spoofed identity, CSRF, stateless MCP and health chec
     const notice = await fetch(`${app.origin}/mcp`, { method: 'POST', headers: bearer, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) });
     assert.equal(notice.status, 202);
     assert.equal((await fetch(`${app.origin}/api/status`, { headers: { Authorization: 'Bearer wrong' } })).status, 401);
+  } finally { await app.shutdown(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('dedicated browser login, protected pages, CSRF and session revocation', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'managerio-login-'));
+  const app = await start(config(dir));
+  try {
+    const entry = await fetch(`${app.origin}/`, { redirect: 'manual' });
+    assert.equal(entry.status, 303);
+    assert.equal(entry.headers.get('location'), '/login');
+    assert.equal((await fetch(`${app.origin}/`, { headers: basic, redirect: 'manual' })).status, 303);
+    const page = await fetch(`${app.origin}/login`);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /Welcome back/);
+    const signIn = (password, origin = app.origin) => fetch(`${app.origin}/login`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+    assert.equal((await signIn(token, 'https://evil.example')).status, 403);
+    const wrong = await signIn('incorrect');
+    assert.equal(wrong.status, 401);
+    assert.equal(wrong.headers.get('set-cookie'), null);
+    const good = await signIn(token);
+    assert.equal(good.status, 200);
+    const value = good.headers.get('set-cookie');
+    assert.match(value, /HttpOnly/);
+    assert.match(value, /SameSite=Strict/);
+    assert.match(value, /Max-Age=28800/);
+    assert(!value.includes(token));
+    const cookie = value.split(';')[0];
+    assert.equal((await fetch(`${app.origin}/api/connections`, { headers: { Cookie: cookie } })).status, 200);
+    const workspace = await fetch(`${app.origin}/`, { headers: { Cookie: cookie } });
+    assert.equal(workspace.status, 200);
+    const html = await workspace.text();
+    assert.match(html, /Company connections/);
+    assert(!html.includes('syncPrepare') && !html.includes('COA preview') && !html.includes('/api/coa/'));
+    const logout = await fetch(`${app.origin}/logout`, { method: 'POST', headers: { Cookie: cookie, Origin: app.origin } });
+    assert.equal(logout.status, 200);
+    assert.match(logout.headers.get('set-cookie'), /Max-Age=0/);
+    assert.equal((await fetch(`${app.origin}/api/connections`, { headers: { Cookie: cookie } })).status, 401);
+    assert.equal((await fetch(`${app.origin}/api/connections`, { headers: { Cookie: 'evertrust_session=forged' } })).status, 401);
+    for (const markup of [loginPage, connectionsPage]) new Script(markup.match(/<script>([\s\S]*?)<\/script>/)[1]);
   } finally { await app.shutdown(); rmSync(dir, { recursive: true, force: true }); }
 });
 
