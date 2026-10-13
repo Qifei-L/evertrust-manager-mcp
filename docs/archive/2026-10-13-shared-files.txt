@@ -1,0 +1,87 @@
+Evertrust Books 共用文件说明（归档快照）
+归档日期：2026-10-13
+适用源码版本：ced7effac439713da526bbdaf5b132444e4ab2c0
+项目：Qifei-L/managerio-mcp
+
+一、当前结构
+同一个 Railway 服务、一个公开 MCP 入口、一个持久化卷。
+读取在主线程执行，账务修改在独立的长期写线程执行。
+两条执行通路共用账务实现和存储契约；并非两台独立服务。
+“共用源码”不代表共用 JavaScript 内存：两个线程各自加载模块。
+
+二、读写共用文件
+
+worker/index.js
+用途：MCP 工具定义、参数校验、公司选择、Manager API 调用、
+      任务审批、写前检查、执行进度、写后核对和缓存失效。
+使用方：server/read-service.mjs、server/write-service.mjs；
+        server/execution.mjs 读取其中的 isReadOnlyTool。
+修改注意：工具定义是路由分类的唯一来源。修改工具的行为时须核对
+          readOnlyHint；新增修改工具不可标记为只读。
+          不绕过公司隔离、审批哈希、条件写入或写后核对。
+
+server/storage.mjs
+用途：SQLite 对象存储；提供 get、put、list、delete、ETag 条件更新
+      和加密密钥指纹检查。
+使用方：server/index.mjs 创建主线程存储；写线程自行创建存储句柄。
+修改注意：两个句柄打开同一卷上的 managerio.sqlite，保留 WAL 和
+          原子条件更新。不得将此文件作为跨容器共享数据库使用。
+          存储层保存 Worker 已加密的内容，并非所有对象均自动加密。
+
+server/performance.mjs
+用途：请求及存储、加密、Manager 调用的耗时与次数统计；
+      写线程结果传回主线程后合并数值指标。
+使用方：server/index.mjs、server/read-service.mjs、server/write-service.mjs。
+修改注意：统计上下文按请求隔离。日志不包含凭据、请求正文或账务内容。
+          两个线程的监控对象各自独立，并不共享内存中的指标窗口。
+
+worker/accounting-skill.js
+用途：由构建脚本生成的账务说明，供 Worker 的初始化和工具读取。
+使用方：两个执行通路加载的 worker/index.js。
+修改注意：应修改 skills/evertrust-books-accounting/SKILL.md，再运行构建；
+          不把生成文件当作另一套独立维护的规则。
+
+三、分工文件
+
+server/index.mjs：HTTP 入口、登录、鉴权、固定用户身份、路由和关闭流程。
+server/read-service.mjs：读取与网关连接管理的执行模块。
+server/write-service.mjs：写线程，保留原有账务实现和检查。
+server/execution.mjs：读写分类、线程消息、容量限制、超时和故障处理。
+server/pages.mjs：登录和公司连接网页，仅由 HTTP 入口使用。
+
+连接管理和偏好设置仍在网关执行，会修改本地数据；执行通路标记为
+read 不意味着该网关接口绝不修改存储。
+
+四、运行时共用数据
+
+/data/managerio.sqlite：加密连接、任务、缓存对象、执行租约等持久化数据。
+两条执行通路通过数据库观察变化，不复制成两份业务数据。
+COA 快照失效代号保存在存储中，跨线程可见。
+写前检查及写后核对读取 Manager 当前数据，不使用陈旧快照代替。
+Manager Token 和加密密钥的值不得写入本说明或 GitHub。
+
+五、当前执行限制
+
+同时只接受一个写通路调用，不同公司的写调用也采用此限制。
+忙碌时拒绝新的调用，不将已接受的账务操作留在易失内存队列中。
+超时不代表 Manager 没有写入；保留执行位直至真实完成或线程退出。
+中断和结果不确定时先核对任务与原生记录，不能自动重放写入。
+现有任务进度可以持久化；本次拆分没有新增通用批量任务 API 或后台队列。
+
+六、维护和归档
+
+本文件是上述源码版本的说明快照；后续源码可能与本快照不同。
+共用关系发生变化时，新增带日期和版本的说明，不覆盖旧归档。
+同一天有多个快照时，在文件名末尾附源码提交短编号。
+在 README 中将“共用文件说明”链接更新为最新归档。
+源码文件继续放在原目录，归档的是说明文字，不移动正在使用的代码。
+
+七、验证入口
+
+tests/execution.test.mjs：路由、线程隔离、并发拒绝、崩溃及超时行为。
+tests/railway.test.mjs：鉴权、SQLite 条件更新、加密持久化和跨线程任务可见性。
+npm test：运行全部回归测试。
+GET /api/execution：鉴权后的写执行器状态。
+GET /api/performance：鉴权后的近期请求统计。
+
+当前部署与操作说明：docs/RAILWAY.md。

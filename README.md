@@ -6,6 +6,8 @@ The repository includes a Node.js 24 service, Dockerfile, `railway.json`, persis
 
 Reads and accounting mutations now use separate execution modules and event loops within this same Railway deployment. A long-lived write thread serializes mutable tool calls, shares the encrypted local database, preserves existing approval/read-back checks and never automatically replays failed writes. Concurrent write calls are rejected before dispatch. This first stage keeps the existing endpoint and volume; it is not yet two independently deployed services or a new durable batch API. See the deployment guide for limits and executor diagnostics.
 
+共用文件的用途、读写模块依赖和维护注意事项见 [共用文件说明（2026-10-13 归档）](docs/archive/2026-10-13-shared-files.txt)。后续结构变化新增说明快照，保留历史归档。
+
 Private Manager.io connector with encrypted, user-owned connections, Manager-native COA changes and existing party/business tools. The English connection page groups tokens by company and keeps external table imports optional.
 
 ## Release policy
