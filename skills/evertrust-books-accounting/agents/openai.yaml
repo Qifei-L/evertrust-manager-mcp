@@ -1,0 +1,4 @@
+interface:
+  display_name: "Evertrust Books Accounting"
+  short_description: "Manager bookkeeping, COA and reports for Evertrust"
+  default_prompt: "Use $evertrust-books-accounting to work with my Manager books."
