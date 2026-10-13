@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import worker, { configureManagerApi } from '../worker/index.js';
 import { SqliteBucket } from './storage.mjs';
 import { loginPage, connectionsPage } from './pages.mjs';
+import { PerformanceMonitor } from './performance.mjs';
 
 export function configuration(env = process.env) {
   const token = env.APP_AUTH_TOKEN;
@@ -52,8 +53,8 @@ function html(res, content) {
   res.end(content);
 }
 
-export function createApplication(config, bucket = new SqliteBucket(join(config.dataDir, 'managerio.sqlite'))) {
-  configureManagerApi(config.managerBase);
+export function createApplication(config, bucket = new SqliteBucket(join(config.dataDir, 'managerio.sqlite')), monitor = new PerformanceMonitor()) {
+  configureManagerApi(config.managerBase, (...args) => monitor.managerFetch(...args));
   bucket.assertEncryptionKey(config.key);
   let stopping = false;
   const sessions = new Map();
@@ -61,7 +62,7 @@ export function createApplication(config, bucket = new SqliteBucket(join(config.
   const cookieName = 'evertrust_session';
   const cookie = (value, maxAge) => `${cookieName}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${config.origin.startsWith('https:') ? '; Secure' : ''}`;
   const sessionId = req => (req.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith(cookieName+'='))?.slice(cookieName.length+1);
-  const server = createServer(async (req, res) => {
+  const server = createServer((req, res) => monitor.request(req, res, async () => {
     try {
       // Build links and CSRF checks from configured origin, never from Host/forwarded headers.
       if (!req.url?.startsWith('/') || req.url.startsWith('//')) return reply(res, 400, { error: 'Invalid request URL' });
@@ -101,6 +102,7 @@ export function createApplication(config, bucket = new SqliteBucket(join(config.
         return reply(res, 401, { error: 'Authentication required' });
       }
       if (req.headers.origin && req.headers.origin !== config.origin) return reply(res, 403, { error: 'Request origin is not allowed.' });
+      if (url.pathname === '/api/performance' && req.method === 'GET') return reply(res, 200, monitor.summary());
       if (url.pathname === '/logout' && req.method === 'POST') {
         if (req.headers.origin !== config.origin) return reply(res, 403, { error: 'Request origin is not allowed.' });
         if (id) sessions.delete(id);
@@ -125,20 +127,23 @@ export function createApplication(config, bucket = new SqliteBucket(join(config.
         parts.push(part);
       }
       const request = new Request(url, { method: req.method, headers, ...(!['GET', 'HEAD'].includes(req.method) ? { body: Buffer.concat(parts) } : {}) });
-      const response = await worker.fetch(request, { BUCKET: bucket, MANAGER_TOKEN_ENCRYPTION_KEY: config.key });
+      const response = await worker.fetch(request, { BUCKET: monitor.bucket(bucket), PERFORMANCE: monitor, MANAGER_TOKEN_ENCRYPTION_KEY: config.key });
+      const responseBody = Buffer.from(await response.arrayBuffer());
+      monitor.responseBytes(responseBody.length);
       const responseHeaders = Object.fromEntries(response.headers);
       responseHeaders['cache-control'] = 'no-store';
       responseHeaders['x-content-type-options'] = 'nosniff';
       responseHeaders['referrer-policy'] = 'no-referrer';
+      responseHeaders['server-timing'] = monitor.timing();
       res.writeHead(response.status, responseHeaders);
-      res.end(req.method === 'HEAD' ? undefined : Buffer.from(await response.arrayBuffer()));
+      res.end(req.method === 'HEAD' ? undefined : responseBody);
     } catch {
       // Log no credentials, request bodies, company records or upstream response content.
       console.error('HTTP request failed');
       if (!res.headersSent) reply(res, 500, { error: 'Request failed. Inspect the saved task before retrying a write.' });
       else res.end();
     }
-  });
+  }));
   server.requestTimeout = 180_000;
   server.headersTimeout = 30_000;
   server.setTimeout(180_000);

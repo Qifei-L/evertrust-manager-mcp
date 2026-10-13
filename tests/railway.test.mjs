@@ -73,6 +73,7 @@ test('HTTP authentication, spoofed identity, CSRF, stateless MCP and health chec
     const denied = await fetch(`${app.origin}/api/connections`, { headers: { 'oai-authenticated-user-id': 'railway-owner' } });
     assert.equal(denied.status, 401);
     assert.equal(denied.headers.get('www-authenticate'), null);
+    assert.equal((await fetch(`${app.origin}/api/performance`)).status, 401);
     assert.equal((await fetch(`${app.origin}/`, { headers: bearer })).status, 200);
     const namespace = (await import('node:crypto')).createHash('sha256').update('victim').digest('hex');
     await app.bucket.put(`preferences/${namespace}.json`, '{"id":"private"}');
@@ -88,6 +89,12 @@ test('HTTP authentication, spoofed identity, CSRF, stateless MCP and health chec
     assert(tools.result.tools.some(tool => tool.name === 'list_connections'));
     const result = await (await rpc(app.origin, 'tools/call', { name: 'list_connections', arguments: {} })).json();
     assert.equal(result.result.isError, false);
+    const metricResponse = await fetch(`${app.origin}/api/performance`, { headers: bearer });
+    const metrics = await metricResponse.json();
+    assert.equal(metricResponse.status, 200);
+    assert(metrics.count > 0 && metrics.p95_ms >= metrics.p50_ms);
+    assert(metrics.recent.some(item => item.route === 'mcp' && item.response_bytes > 0));
+    assert(!JSON.stringify(metrics).includes(token));
     const notice = await fetch(`${app.origin}/mcp`, { method: 'POST', headers: bearer, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) });
     assert.equal(notice.status, 202);
     assert.equal((await fetch(`${app.origin}/api/status`, { headers: { Authorization: 'Bearer wrong' } })).status, 401);

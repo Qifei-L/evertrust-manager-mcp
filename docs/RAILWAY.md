@@ -38,6 +38,12 @@ This Railway version is a **single-owner service**: everyone holding the service
 
 ## Continuous delivery
 
+### Performance inspection
+
+Authenticated `GET /api/performance` reports the last 500 completed requests in the current process, p50/p95 server duration and 30 recent samples. Railway logs receive numeric request/storage/crypto/Manager durations and call counts. Worker responses include `Server-Timing`. No credentials, request parameters, company IDs, document contents or upstream response bodies are logged. The metrics window resets on restart; it is not a durable monitoring service. Operation durations can overlap during parallel work and are not necessarily additive. Manager duration includes fetch headers and reading its response body; network time between the client and Railway is outside server duration.
+
+Selected-company calls read and decrypt only the specified connection, retaining owner scoping, removal checks, legacy migration and fresh record reads. AES keys are imported once per request; connection records and write preconditions are not cached across requests.
+
 GitHub Actions runs all regression suites, Railway adapter tests, artifact validation and a Docker build on pushes to `main` and pull requests. Connect Railway to this repository's `main` branch and enable GitHub autodeploys plus **Wait for CI** in service settings. After that, a successful push can deploy automatically; no Railway token belongs in GitHub Actions.
 
 Adding `railway.json` does not create a Railway project, mount its volume, configure secrets or enable Wait for CI. Those are service settings. This source migration does not deploy over the original Evertrust Books service. Source pushes after Railway autodeploy is enabled are deployment actions and should follow your release policy.
