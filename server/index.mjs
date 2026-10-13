@@ -3,7 +3,7 @@ import { createHash, timingSafeEqual, randomBytes } from 'node:crypto';
 import { resolve, relative, isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { SqliteBucket } from './storage.mjs';
-import { loginPage, connectionsPage } from './pages.mjs';
+import { loginPage, connectionsPage, mcpSettingsPage } from './pages.mjs';
 import { PerformanceMonitor } from './performance.mjs';
 import { executionLane, WriteExecutor } from './execution.mjs';
 import { ReadService } from './read-service.mjs';
@@ -80,7 +80,7 @@ export function createApplication(config, bucket = new SqliteBucket(join(config.
       const sessionActive = !!id && sessions.has(id);
       const credentialActive = authenticated(req.headers.authorization, config.token);
       // Browser entry uses its explicit login session, not a cached Basic-auth challenge.
-      const browserEntry = url.pathname === '/' || url.pathname === '/login';
+      const browserEntry = url.pathname === '/' || url.pathname === '/login' || url.pathname === '/mcp-settings';
       const loggedIn = sessionActive || (credentialActive && (!browserEntry || req.headers.authorization?.startsWith('Bearer ')));
       if (url.pathname === '/login' && req.method === 'GET') {
         if (loggedIn) { res.writeHead(303, { Location: '/', 'Cache-Control': 'no-store' }); return res.end(); }
@@ -100,7 +100,7 @@ export function createApplication(config, bucket = new SqliteBucket(join(config.
         return reply(res, 200, { signed_in: true }, { 'Set-Cookie': cookie(newId, lifetime/1000) });
       }
       if (!loggedIn) {
-        if (url.pathname === '/' && req.method === 'GET') { res.writeHead(303, { Location: '/login', 'Cache-Control': 'no-store' }); return res.end(); }
+        if (['/', '/mcp-settings'].includes(url.pathname) && req.method === 'GET') { res.writeHead(303, { Location: '/login', 'Cache-Control': 'no-store' }); return res.end(); }
         return reply(res, 401, { error: 'Authentication required' });
       }
       if (req.headers.origin && req.headers.origin !== config.origin) return reply(res, 403, { error: 'Request origin is not allowed.' });
@@ -112,6 +112,7 @@ export function createApplication(config, bucket = new SqliteBucket(join(config.
         return reply(res, 200, { signed_out: true }, { 'Set-Cookie': cookie('', 0) });
       }
       if (url.pathname === '/' && req.method === 'GET') return html(res, connectionsPage);
+      if (url.pathname === '/mcp-settings' && req.method === 'GET') return html(res, mcpSettingsPage(config));
       if (url.pathname === '/mcp' && req.method !== 'POST') return reply(res, 405, { error: 'This stateless MCP endpoint accepts POST only.' }, { Allow: 'POST' });
       const headers = new Headers();
       for (const [key, value] of Object.entries(req.headers)) {

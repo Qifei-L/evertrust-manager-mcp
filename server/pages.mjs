@@ -14,7 +14,7 @@ form.addEventListener('submit',async event=>{event.preventDefault();button.disab
 `);
 
 export const connectionsPage = document('Connections', `
-<header><div class="brand">Evertrust Books</div><button class="quiet" id="logout">Sign out</button></header><main><div class="heading"><div><div class="eyebrow">Workspace</div><h1>Company connections</h1><p class="muted">Your companies, connected in one place.</p></div><button class="button primary" id="add">Add connection</button></div><div class="notice" id="notice" role="status" aria-live="polite">Loading connections…</div><section class="list" id="companies" aria-label="Company connections"></section><p class="footnote">Manager access tokens are encrypted and never displayed after saving.</p></main>
+<header><div class="brand">Evertrust Books</div><div style="display:flex;align-items:center;gap:16px"><a class="quiet" href="/mcp-settings" style="text-decoration:none">MCP connection</a><button class="quiet" id="logout">Sign out</button></div></header><main><div class="heading"><div><div class="eyebrow">Workspace</div><h1>Company connections</h1><p class="muted">Your companies, connected in one place.</p></div><button class="button primary" id="add">Add connection</button></div><div class="notice" id="notice" role="status" aria-live="polite">Loading connections…</div><section class="list" id="companies" aria-label="Company connections"></section><p class="footnote">Manager access tokens are encrypted and never displayed after saving.</p></main>
 <dialog id="editor" aria-labelledby="editorTitle"><form id="connectionForm"><h2 id="editorTitle">Add connection</h2><p id="editorHint">Paste the access token from your company's Manager settings.</p><label class="field" for="token"><span id="tokenLabel">Manager access token</span><input id="token" name="token" type="password" autocomplete="off" spellcheck="false" required placeholder="Paste access token"></label><details id="extra"><summary>Optional details</summary><label class="field" for="label"><span>Label</span><input id="label" name="label" maxlength="120" placeholder="e.g. Accounting"></label><label class="field" for="notes"><span>Notes</span><textarea id="notes" name="notes" rows="2" maxlength="500"></textarea></label></details><p class="error" id="formError" role="alert"></p><div class="footer"><button class="button" type="button" id="cancel">Cancel</button><button class="button primary" id="save" type="submit">Connect company</button></div></form></dialog>
 <dialog id="remover" aria-labelledby="removeTitle"><h2 id="removeTitle">Remove connection?</h2><p id="removeName"></p><p>This removes the saved token from this workspace. Your Manager records stay as they are.</p><p class="error" id="removeError" role="alert"></p><div class="footer"><button class="button" id="keep">Cancel</button><button class="button primary" id="removeConfirm">Remove</button></div></dialog>
 `, `
@@ -30,3 +30,41 @@ $('removeConfirm').onclick=async()=>{const button=$('removeConfirm');button.disa
 $('logout').onclick=async()=>{try{await api('/logout',{});location.replace('/login')}catch(error){$('notice').textContent=error.message}};
 load().catch(error=>$('notice').textContent=error.message);
 `);
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+}
+
+// The service credential is rendered only after the gateway authenticates this page.
+// It comes from the existing private environment, never from a source-code literal.
+export function mcpSettingsPage(config) {
+  const endpoint = escapeHtml(`${config.origin}/mcp`);
+  const login = escapeHtml(`${config.origin}/login`);
+  const token = escapeHtml(config.token);
+  return document('MCP connection', `
+<header><div class="brand">Evertrust Books</div><button class="quiet" id="logout">Sign out</button></header>
+<main><a href="/" class="quiet" style="padding-left:0;text-decoration:none">← Company connections</a>
+<div class="heading" style="margin-top:28px"><div><div class="eyebrow">Workspace</div><h1>MCP connection</h1><p class="muted">Connect your AI client to this workspace.</p></div></div>
+<form id="settings"><label class="field" for="endpoint"><span>MCP URL</span><input id="endpoint" value="${endpoint}" readonly spellcheck="false"></label>
+<label class="field" for="transport"><span>Connection method</span><input id="transport" value="Streamable HTTP · stateless" readonly></label>
+<label class="field" for="auth"><span>Authentication</span><input id="auth" value="Bearer Token" readonly></label>
+<label class="field" for="token"><span>Access token · visible</span><input id="token" type="text" value="${token}" readonly autocomplete="off" spellcheck="false" style="font-family:ui-monospace,monospace"><div class="footnote" style="margin-top:8px">Use the token value above. If your client asks for a header, use the complete line below.</div></label>
+<label class="field" for="authorization"><span>Authorization header</span><input id="authorization" type="text" value="Authorization: Bearer ${token}" readonly autocomplete="off" spellcheck="false" style="font-family:ui-monospace,monospace"></label>
+<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="button" type="button" id="copyToken">Copy token</button><button class="button" type="button" id="copyHeader">Copy header</button><button class="button" type="button" id="copyConfig">Copy client config</button></div>
+<div class="list" style="margin-top:32px;padding-top:24px"><h2>How to connect</h2><p class="muted" style="font-size:14px">1. Add a remote MCP server in your client.<br>2. Enter the MCP URL and choose Streamable HTTP.<br>3. Add the Bearer token or Authorization header, then connect.</p>
+<p class="muted" style="font-size:13px">Clients must support authenticated remote MCP servers. Configuration format varies by client; the copied JSON contains the URL and headers.</p>
+<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="button primary" type="button" id="test">Test connection</button><span id="testStatus" class="muted" style="font-size:13px">Not tested</span></div></div>
+<label class="field" for="browserLogin"><span>Browser login</span><input id="browserLogin" value="${login}" readonly><div class="footnote" style="margin-top:8px">Password-only login. The browser password is the same value as the access token above.</div></label>
+<p class="footnote">Add Manager company tokens on the Company connections page. This workspace token connects your AI client to the service and grants access to all saved company connections.</p>
+<div class="notice" id="notice" role="status" aria-live="polite"></div></form></main>
+`, `
+const $=id=>document.getElementById(id);
+$('settings').onsubmit=event=>event.preventDefault();
+async function copy(value,field){try{await navigator.clipboard.writeText(value);$('notice').textContent='Copied.'}catch{if(field){field.focus();field.select();$('notice').textContent='Select and copy the highlighted value.'}else{$('notice').textContent='Clipboard unavailable. Copy the URL and header fields above.'}}}
+$('copyToken').onclick=()=>copy($('token').value,$('token'));
+$('copyHeader').onclick=()=>copy($('authorization').value,$('authorization'));
+$('copyConfig').onclick=()=>copy(JSON.stringify({mcpServers:{'evertrust-books':{url:$('endpoint').value,headers:{Authorization:'Bearer '+$('token').value}}}},null,2));
+$('test').onclick=async()=>{const button=$('test');button.disabled=true;$('testStatus').textContent='Testing…';$('notice').textContent='';try{async function rpc(method,params,id){const response=await fetch($('endpoint').value,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+$('token').value},body:JSON.stringify({jsonrpc:'2.0',id,method,params})});if(response.status===401){location.replace('/login');throw Error('Sign in again to test this connection.')}if(!response.ok)throw Error('Connection failed (HTTP '+response.status+').');const data=await response.json();if(data.error)throw Error(data.error.message||'MCP request failed.');return data.result}await rpc('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'evertrust-connection-check',version:'1.0'}},1);const result=await rpc('tools/list',{},2);$('testStatus').textContent='Connected · '+(result.tools?.length||0)+' tools available';$('notice').textContent='Authentication and MCP initialization verified. No accounting records were changed.'}catch(error){$('testStatus').textContent='Test failed';$('notice').textContent=error.message}finally{button.disabled=false}};
+$('logout').onclick=async()=>{try{const response=await fetch('/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});if(!response.ok)throw Error('Unable to sign out.');location.replace('/login')}catch(error){$('notice').textContent=error.message}};
+`);
+}
