@@ -1,0 +1,13 @@
+.git
+.github
+.env*
+.dev.vars*
+data
+dist
+work
+outputs
+node_modules
+*.log
+*.sqlite*
+*.pem
+*.key

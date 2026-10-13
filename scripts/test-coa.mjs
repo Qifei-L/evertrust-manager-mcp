@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import worker from '../worker/index.js';
 const origin='https://coa.test',objects=new Map();let rev=0,failCheckpoint=false;
 const env={MANAGER_TOKEN_ENCRYPTION_KEY:'cd'.repeat(32),BUCKET:{get:async k=>{const o=objects.get(k);return o?{etag:o.etag,json:async()=>JSON.parse(o.value)}:null},put:async(k,value,opt)=>{const old=objects.get(k);if(opt?.onlyIf?.etagMatches&&old?.etag!==opt.onlyIf.etagMatches)return null;if(opt?.onlyIf?.etagDoesNotMatch==='*'&&old)return null;if(failCheckpoint&&k.startsWith('coa-tasks/')){failCheckpoint=false;throw Error('checkpoint unavailable')}const etag=String(++rev);objects.set(k,{value,etag});return {etag}},delete:async k=>objects.delete(k),list:async({prefix})=>({objects:[...objects.keys()].filter(k=>k.startsWith(prefix)).map(key=>({key})),truncated:false})}};
@@ -89,7 +91,7 @@ const missing=await rpc('prepare_coa_sync',{connection_id:c,rows:[{name:'No know
 const dubious=await rpc('prepare_coa_sync',{connection_id:c,items:[{kind:'balance_sheet_account',set:{name:'Bulk 0 fees',group_key:g1}}]}); // similarity candidates, no guessing
 const badBoth=await rpc('prepare_coa_sync',{connection_id:c,items:[],rows:[]});assert(badBoth.error);
 const reportInfo=await rpc('get_coa_sync_report',{task_id:normalized.value.task_id,include_rows:true});assert.equal(reportInfo.value.rows.length,1);assert.equal(reportInfo.value.rows[0].length,6);
-const xlsx=await worker.fetch(new Request(origin+reportInfo.value.report_path,{headers:{'oai-authenticated-user-id':'owner'}}),env);assert.equal(xlsx.status,200);assert(xlsx.headers.get('Content-Type').includes('spreadsheetml'));const buffer=Buffer.from(await xlsx.arrayBuffer());assert.equal(buffer.subarray(0,2).toString(),'PK');assert(buffer.toString().includes('Old Group'));assert(!buffer.toString().includes('<f>'));assert(!buffer.toString().includes('alpha-new'));const {writeFile}=await import('node:fs/promises');await writeFile('/tmp/evertrust-coa-report-test.xlsx',buffer);
+const xlsx=await worker.fetch(new Request(origin+reportInfo.value.report_path,{headers:{'oai-authenticated-user-id':'owner'}}),env);assert.equal(xlsx.status,200);assert(xlsx.headers.get('Content-Type').includes('spreadsheetml'));const buffer=Buffer.from(await xlsx.arrayBuffer());assert.equal(buffer.subarray(0,2).toString(),'PK');assert(buffer.toString().includes('Old Group'));assert(!buffer.toString().includes('<f>'));assert(!buffer.toString().includes('alpha-new'));const {writeFile}=await import('node:fs/promises');await writeFile(join(tmpdir(),'evertrust-coa-report-test.xlsx'),buffer);
 assert.equal((await worker.fetch(new Request(origin+reportInfo.value.report_path,{headers:{'oai-authenticated-user-id':'other'}}),env)).status,404);
 assert.equal((await worker.fetch(new Request(origin+reportInfo.value.report_path),env)).status,401);
 const noOpReport=await rpc('get_coa_sync_report',{task_id:noChanges.task_id,include_rows:true});assert.equal(noOpReport.value.rows.length,0);

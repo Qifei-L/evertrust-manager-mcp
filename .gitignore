@@ -11,4 +11,8 @@ node_modules/
 *.pem
 *.key
 work/
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 

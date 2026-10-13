@@ -1,5 +1,9 @@
 # Evertrust Books
 
+## Railway deployment
+
+The repository includes a Node.js 24 service, Dockerfile, `railway.json`, persistent SQLite storage and GitHub CI. Follow [the Railway guide](docs/RAILWAY.md) to configure a volume, secrets, Manager API URL and GitHub autodeploys. Start with `npm run dev` locally or `npm start` with configured environment variables. The Railway adapter uses a single-owner Bearer/Basic credential; it does not trust public identity headers. Source exports do not contain your existing cloud connections.
+
 Private Manager.io connector with encrypted, user-owned connections, Manager-native COA changes and existing party/business tools. The English connection page groups tokens by company and keeps external table imports optional.
 
 ## Release policy
