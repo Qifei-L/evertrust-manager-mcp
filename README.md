@@ -204,3 +204,12 @@ Native Sample mainstream-flow test: independent customer/supplier/item/bank; pur
 Fixes two new live findings: date-only input normalized to midnight now compares by equivalent native calendar representation; exact Reference lookup reads native details when list rows omit Reference, with bounded reads and incomplete outcomes rather than false not-found. Sample Journal list omitted Reference, and native term search did not match test references even though the unfiltered GL contained the rows.
 
 The new module/asset/settings tools have local regression tests; their live Sample execution is still Pending because publication is intentionally withheld. Native report source feeds were empty despite an active GL, so they remain source data, not full statements. See docs/sample-mainstream-verification-20261012.md for the test matrix and limitations.
+
+
+## Record links, actionable errors and correction batches (0.20.0)
+
+Adds bounded explicit native document lookups, opt-in chart-label candidates kept separate from native GL identities, structured argument diagnostics, and correct MCP error flags for failed or uncertain operations.
+
+Correction batches support 1..20 authorized native updates/deletes with encrypted immutable before/after previews, current-hash preflight, per-record durable checkpoints, no automatic replay/rollback and optional generic GL comparisons. Creates/imports remain separate. A claimed or interrupted task must be inspected before preparing remaining work.
+
+See [RECORD-CHANGES.md](docs/RECORD-CHANGES.md) for contracts, partial-failure behavior and limitations. Node 24 local regression and standalone artifact validation cover the new paths using simulated companies. Production deployment and live mutation verification are separate steps; no real client books were changed to test these features.
