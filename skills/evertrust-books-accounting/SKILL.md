@@ -7,6 +7,13 @@ description: Work with Manager.io books through Evertrust Books. Use for invoice
 
 Use the Evertrust Books MCP connection. Use the tool names actually returned by tools/list; tool availability describes the deployed release, not a future source draft.
 
+## Mandatory choice of data source
+
+- **Display transactions/documents:** use the corresponding native document collection and form APIs through `list_records`, `find_record`, `get_record`, or an advertised module detail endpoint. Sales invoices use `sales_invoices`, purchase invoices `purchase_invoices`, incoming money `receipts`, outgoing money `payments`, and journals `journal_entries`. Use native document dates, reference, counterparty, currency, total, status and line items. Do not substitute GL posting rows for documents: one document can produce many postings, and some documents do not post at all. Do not infer invoice totals or settlement status from GL amounts. Follow document pages and inspect the form when list fields are missing.
+- **Financial reports:** fetch the GL with `get_transactions(connection_id:..., source:"general_ledger", auto_paginate:true)` and then process it. The production reporting workflow is GL-derived; there is no verified complete native financial-report reader. Do not start routine reporting by probing report interfaces, creating report definitions, reading `*-transactions` report feeds, or calling `get_financial_report_data`. Those retained compatibility/diagnostic tools are not the report source, even if their names sound like reports. Empty legacy report feeds never prove zero activity.
+- **GL analysis/postings:** use the GL endpoint directly. Trace a posting to its native source document only when structured links establish that identity; use explicit document lookups to inspect original details.
+- Read and follow the GL procedure below before presenting a report. Keep the calculation in the assistant's analysis/data-processing environment or the connector's evidenced generic grouping; do not save report definitions or post accounting entries merely to produce a report.
+
 ## Parameters and first-create field discovery
 
 - Read `get_tool_contract` for the exact deployed schema when a host hides constraints. Paging uses `page_size:1..100`, `skip>=0`; `find_record.max_pages:1..10` (default 5). Diagnostic native query uses camel-case `pageSize:1..100`; tool arguments and native field names are case-sensitive. GL grouping uses returned native names such as `account` and `amount`, not guessed capitalizations.
@@ -41,7 +48,7 @@ Use the Evertrust Books MCP connection. Use the tool names actually returned by 
 - Native term searching was shown not to match some References in Sample. For GL, use a complete general_ledger read and exact local filters. Exact find_record scans unfiltered list pages and, when a list omits Reference, performs at most 25 detail reads within its time budget. Any unresolved/capped scan is incomplete, never a proved not-found. A list row's native key and a detailed form establish identity; a display name never does.
 - Sample TB/P&L/BS/tax source feeds were empty while the native GL contained transactions. Do not turn empty source feeds into zero financial statements; use the complete GL for generic analysis and disclose its limitations.
 - Native date-only values may read back as the same calendar date at midnight. Storage verification treats only these equivalent Date/IssueDate/FromDate/ToDate representations as equal; other dates/times, money, quantities and unknown fields retain exact checks.
-- Current source iteration is intentionally unpublished. New asset/settings/module tools have local transport tests, but live Sample testing remains Pending until a deployed tool surface exists. Do not report native writes as tested based on local mocks.
+- Availability is determined by the deployed tool surface. New asset/settings/module routes have local transport tests, but their native write behavior remains Pending unless a live test is recorded. Do not report native writes as tested based on local mocks.
 
 ## Start with the company
 
@@ -111,6 +118,14 @@ Record the requested receipt using native fields; leave it unallocated only when
 
 ## Financial reports and GL-derived analysis
 
+### Report procedure for the assistant
+
+1. Select the requested company via `list_connections`; establish the report kind, reporting dates and currency. Read the same-company COA structure (`get_accounts` and evidenced native group/parent forms) for classification.
+2. Request GL using `get_transactions` with `source:"general_ledger", auto_paginate:true`. For P&L use the requested period; TB/BS need sufficient prior history plus verified opening/starting balances through the as-of cutoff. A current-period-only pull cannot establish closing balances. Do not assume the feed includes openings or year-end transfers without evidence.
+3. Inspect `complete`, `result_complete`, `rows_read`, `total_records`, `stop_reason` and `aggregation_performed`. If a bounded call yields `next_skip`, continue or narrow the request without gaps/overlap. Never aggregate incomplete data into a final report. These reads are live offset pages, not an immutable snapshot.
+4. Prefer raw GL rows when report semantics need further inspection; use `group_by`/`sum_fields` only with evidenced native fields for compact movement summaries. Classify through actual company COA identities/verified unique candidates, preserve currencies, verify amount signs and opening/closing treatment, then calculate. Never invent account links or gross debit/credit columns from net movements.
+5. Reconcile totals and flag unresolved account classification, opening balances, allocations or currency conversion. Label the result **GL-derived / reconstructed**, with company, period, retrieval time, coverage and limitations. If evidence supports movements only, present a movement analysis rather than calling it a complete TB/BS. AR/AP aging additionally requires native invoice dates, allocations and outstanding amounts; retrieve those from document APIs.
+
 ### Explicit links, errors and corrections in batches
 
 - Use `resolve_record_links` for up to ten explicit same-company resource/key or exact-reference lookups. Only direct form reads or complete unique-reference scans return a usable native key/hash. Ambiguous or incomplete results remain unresolved. A reference match is lookup evidence; it does not establish a native link from a GL row.
@@ -133,7 +148,7 @@ For compact results, supply generic `group_by` (native scalar field names, plus 
 - TB and BS require verified opening/starting balances, period cutoff, retained earnings/tax/control-account semantics and all relevant postings. Period movement is not closing balance. Avoid double-counting openings already included in the feed; check total debits/credits only when the native data supports that calculation. AR/AP aging requires invoice dates, allocations, outstanding balances and cutoff; net GL is insufficient.
 - Preserve native currencies; never sum mixed currencies without an evidenced conversion/base amount. Generic sums use floating point: round once to evidenced currency precision and reconcile material differences. State company, period, filters, source, completeness and unresolved semantics.
 
-Use `list_report_interfaces` / probe when native rendered reports can verify results or GL lacks required dimensions. Definitions (`*-form`) are configuration, not statements. `get_financial_report_data` feeds/balance lists have `full_report:false`; use reliable native reports for reconciliation when available, otherwise disclose missing evidence and request only the export needed to complete the analysis.
+`list_report_interfaces`, `read_report_endpoint`, report-definition forms and `get_financial_report_data` remain compatibility/diagnostic interfaces, not the normal reporting workflow. Definitions (`*-form`) are configuration, not statements; legacy feeds/balance lists have `full_report:false`. If GL and document data lack required evidence, disclose it and request the relevant native export for reconciliation. Do not claim a native report interface is operational based on OpenAPI discovery alone.
 
 ## Chart of accounts: Manager-native workflow
 

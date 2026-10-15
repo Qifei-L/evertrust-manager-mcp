@@ -1,6 +1,6 @@
 {
   "name": "evertrust-books-managerio-mcp",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,5 +11,7 @@
     "test:railway": "node --test tests/railway.test.mjs",
     "validate": "node scripts/validate-artifact.mjs"
   },
-  "engines": { "node": ">=24 <25" }
+  "engines": {
+    "node": ">=24 <25"
+  }
 }

@@ -7,6 +7,7 @@ import { loginPage, connectionsPage, mcpSettingsPage } from './pages.mjs';
 import { PerformanceMonitor } from './performance.mjs';
 import { executionLane, WriteExecutor } from './execution.mjs';
 import { ReadService } from './read-service.mjs';
+import { OwnerOAuth } from './oauth.mjs';
 
 export function configuration(env = process.env) {
   const token = env.APP_AUTH_TOKEN;
@@ -56,6 +57,7 @@ function html(res, content) {
 
 export function createApplication(config, bucket = new SqliteBucket(join(config.dataDir, 'managerio.sqlite')), monitor = new PerformanceMonitor()) {
   bucket.assertEncryptionKey(config.key);
+  const oauth = new OwnerOAuth(config, bucket);
   const reads = new ReadService(config, bucket, monitor);
   const writes = new WriteExecutor(config);
   let stopping = false;
@@ -79,9 +81,13 @@ export function createApplication(config, bucket = new SqliteBucket(join(config.
       const id = sessionId(req);
       const sessionActive = !!id && sessions.has(id);
       const credentialActive = authenticated(req.headers.authorization, config.token);
+      if (await oauth.handle(req, res, url, sessionActive)) return;
+      // OAuth tokens delegate MCP tools only; they cannot view the owner password
+      // on /mcp-settings or manage company tokens in the browser/API.
+      const oauthActive = url.pathname === '/mcp' && oauth.authenticate(req.headers.authorization);
       // Browser entry uses its explicit login session, not a cached Basic-auth challenge.
       const browserEntry = url.pathname === '/' || url.pathname === '/login' || url.pathname === '/mcp-settings';
-      const loggedIn = sessionActive || (credentialActive && (!browserEntry || req.headers.authorization?.startsWith('Bearer ')));
+      const loggedIn = sessionActive || oauthActive || (credentialActive && (!browserEntry || req.headers.authorization?.startsWith('Bearer ')));
       if (url.pathname === '/login' && req.method === 'GET') {
         if (loggedIn) { res.writeHead(303, { Location: '/', 'Cache-Control': 'no-store' }); return res.end(); }
         return html(res, loginPage);
@@ -101,7 +107,7 @@ export function createApplication(config, bucket = new SqliteBucket(join(config.
       }
       if (!loggedIn) {
         if (['/', '/mcp-settings'].includes(url.pathname) && req.method === 'GET') { res.writeHead(303, { Location: '/login', 'Cache-Control': 'no-store' }); return res.end(); }
-        return reply(res, 401, { error: 'Authentication required' });
+        return reply(res, 401, { error: 'Authentication required' }, url.pathname === '/mcp' ? { 'WWW-Authenticate': oauth.challenge() } : {});
       }
       if (req.headers.origin && req.headers.origin !== config.origin) return reply(res, 403, { error: 'Request origin is not allowed.' });
       if (url.pathname === '/api/performance' && req.method === 'GET') return reply(res, 200, monitor.summary());

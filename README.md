@@ -1,5 +1,12 @@
 # Evertrust Books
 
+## Current release: 0.21.0
+
+- Railway now supports OAuth authorization-code + S256 PKCE, dynamic client registration, owner consent, expiring access tokens, rotating refresh tokens and revocation. Claude: **Sign in now → Register automatically**; ChatGPT: **OAuth / DCR**. Existing Bearer-token connections still work. This remains one owner's company namespace, not employee account isolation. See [Railway authentication](docs/RAILWAY.md#connect).
+- Display transaction documents through the matching native collection/form APIs (`list_records`, `find_record`, `get_record`), preserving original document totals, dates, counterparties, status and lines. GL postings are not transaction documents.
+- Financial reporting uses complete GL (`get_transactions` with `source:"general_ledger", auto_paginate:true`) followed by evidence-based processing with COA, openings, period and currency reconciliation. There is no verified full native financial-report reader. Legacy report feeds and definition tools remain compatibility/diagnostic interfaces; they are not the normal report source. This supersedes older reporting notes below.
+- The mandatory source selection and step-by-step report procedure are embedded in MCP initialization, `get_accounting_skill` and tool descriptions, so a newly connected AI receives the workflow automatically.
+
 ## Railway deployment
 
 The repository includes a Node.js 24 service, Dockerfile, `railway.json`, persistent SQLite storage and GitHub CI. Follow [the Railway guide](docs/RAILWAY.md) to configure a volume, secrets, Manager API URL and GitHub autodeploys. Start with `npm run dev` locally or `npm start` with configured environment variables. The Railway adapter uses a single-owner Bearer/Basic credential; it does not trust public identity headers. Source exports do not contain your existing cloud connections.
