@@ -1,5 +1,17 @@
 # Evertrust Books
 
+## Prepared release: 0.21.2 (source only)
+
+This maintenance update bounds normalized GL replies to 60,000 characters by default (configurable 12,000–120,000). Oversized raw rows or groups are withheld with `result_complete:false`, explicit budget diagnostics and executable next-request arguments. Raw reads also suggest a complete account aggregation. Native read completeness remains separate from result delivery. Grouping examples appear first in the GL tool description and quick tool selection appears first in the canonical embedded Skill.
+
+COA structure pages now support 100 items, default 50, using the existing isolated snapshot and cursor. System-account 404s and incomplete unused-group inventories remain explicit limitations; no default hierarchy is fabricated. Connection lists identify same-name connection IDs and include an unambiguous selection label. Business Details automatically uses the documented singleton key for keyed GETs; native 404 returns chart-verified display identity and `native_record_not_found` instead of an unhelpful argument error. Registered name, tax ID and base currency remain unverified until an actual native form can be read. Permission failures remain errors. Writes still require an evidenced native key/hash and are unchanged.
+
+GL currency evidence reports missing native money currencies, retains native money objects and refuses sums across multiple evidenced currencies. It does not invent KHR/USD, convert amounts or reconstruct document currency from descriptions. Existing account-candidate and reference-lookup tools are surfaced in the quick workflow; references remain lookup evidence rather than proven GL source identity. This update does not recover absent upstream source keys, attachments, singleton settings or currency data.
+
+The tool catalogue retains all 76 tools. Six identical optional native-row field descriptions previously repeated inside every feed schema are replaced with open native row objects; direct document/item field hints, exact input contracts, required envelopes and existing write protections remain. Regression checks cover catalogue size, response withholding, follow-up requests, missing/mixed currencies, duplicate connection names, missing Business Details keys and larger cached COA pages. Build regenerates the embedded Skill byte-for-byte.
+
+The live service remains on 0.21.1 until explicitly approved deployment under the release policy below. Live diagnosis on 2026-10-15 reproduced key-required Business Details on both GCNIM connections and native missing currency/source IDs in the 1,869-row Industrial ledger. Reading upstream model GUIDs through the advertised keyed forms returned 404; these are not accepted as recovered singleton record keys. No real accounting records were written.
+
 ## Current release: 0.21.1
 
 The OAuth consent page preserves same-origin form provenance and allows redirects only to its client's registered callback origin. This fixes real-browser authorization submissions being rejected as `Origin:null`; the 303 response still suppresses referrers. CI now covers an actual Chromium form submission and callback, in addition to HTTP/API tests.

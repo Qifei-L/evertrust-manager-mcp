@@ -42,5 +42,22 @@ try{
  for(const extra of [{auto_paginate:'true'},{source:'invalid'},{skip:1},{group_by:['account'],sum_fields:['unknown']},{filters:{unknown:'x'}},{group_by:['unknown']},{auto_paginate:false,group_by:['account']}])assert((await rpc('get_transactions',{...args,...extra})).error,JSON.stringify(extra));
  assert((await rpc('get_transactions',args,'other')).error);
  r=await rpc('get_transactions',{...args,auto_paginate:false,page_size:2});assert.equal(r.data.complete,false);assert.equal(r.data.items.length,2);
+ assert.equal(r.data.currency_evidence.status,'incomplete');assert.equal(r.data.currency_evidence.rows_missing_currency,2);
+ // Budget the normalized result, including linkage expansion, not only raw native pages.
+ dataset.forEach(row=>row.description='x'.repeat(400));
+ r=await rpc('get_transactions',args);assert(!r.error);assert.equal(r.data.complete,true);assert.equal(r.data.result_complete,false);assert.equal(r.data.stop_reason,'response_budget_exceeded');assert.deepEqual(r.data.items,[]);assert.equal(r.data.next_request.arguments.auto_paginate,false);assert.equal(r.data.next_request.arguments.skip,0);assert.equal(r.data.summary_request.arguments.source,'general_ledger');
+ const detail=await rpc(r.data.next_request.tool,r.data.next_request.arguments);assert(!detail.error);assert(detail.data.items.length>0);assert(JSON.stringify(detail.data).length<=60000);assert(detail.data.next_skip>0);
+ r=await rpc('get_transactions',r.data.summary_request.arguments);assert(!r.error);assert.equal(r.data.aggregation_performed,true);assert.equal(r.data.groups.reduce((n,g)=>n+g.row_count,0),205);
+ r=await rpc('get_transactions',{...args,group_by:['description','n'],sum_fields:['amount'],max_output_chars:12000});assert(!r.error);assert.equal(r.data.aggregation_performed,false);assert.equal(r.data.result_complete,false);assert.deepEqual(r.data.groups,[]);
+ dataset[0].debit={value:3,currency:'USD'};dataset[1].credit={value:2,currency:'KHR'};
+ r=await rpc('get_transactions',{...args,auto_paginate:false,page_size:2});assert.equal(r.data.currency_evidence.status,'mixed_native_currencies');assert.deepEqual(r.data.items[1].credit,{value:2,currency:'KHR'});
+ assert((await rpc('get_transactions',{...args,group_by:['account'],sum_fields:['amount']})).error,'mixed native currencies must not be silently summed');
+ assert((await rpc('get_transactions',{...args,max_output_chars:11999})).error);
+ // Regression at the reported ledger size; the complete source read stays small in chat.
+ dataset.splice(0,dataset.length,...Array.from({length:1869},(_,i)=>({date:'2026-10-01',account:i%2?'Cash':'Utilities',amount:i%2?-5.5:5.5,description:'Synthetic utility posting '.repeat(12),n:i})));
+ const priorFetch=globalThis.fetch;
+ globalThis.fetch=async(url,opts)=>{const u=new URL(url);if(u.pathname.endsWith('/transactions')){const skip=Number(u.searchParams.get('skip')),size=Number(u.searchParams.get('pageSize'));return Response.json({business:{name:'Alpha'},skip,totalRecords:1869,transactions:dataset.slice(skip,skip+size)})}return priorFetch(url,opts)};
+ r=await rpc('get_transactions',args);assert(!r.error);assert.equal(r.data.rows_read,1869);assert.equal(r.data.complete,true);assert.equal(r.data.result_complete,false);assert(JSON.stringify(r.data).length<60000);
+ r=await rpc('get_transactions',r.data.summary_request.arguments);assert.equal(r.data.groups.reduce((n,g)=>n+g.row_count,0),1869);assert.equal(r.data.aggregation_performed,true);
  console.log('PASS GL: 205 rows/3 pages, exact filters/date/month grouping, signed sums, isolation, malformed inputs, changed totals/empty/repeated/failed page withholding aggregation.');
 }finally{globalThis.fetch=original}

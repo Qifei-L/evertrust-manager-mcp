@@ -7,6 +7,21 @@ description: Work with Manager.io books through Evertrust Books. Use for invoice
 
 Use the Evertrust Books MCP connection. Use the tool names actually returned by tools/list; tool availability describes the deployed release, not a future source draft.
 
+## Quick tool selection
+
+| Task | Start here |
+| --- | --- |
+| Choose a company | `list_connections`; inspect `selection_label`, duplicate-name IDs and exact `connection_id`. Similar names do not establish legal identity. |
+| Complete compact GL movements | `get_transactions` with `source:"general_ledger", group_by:["account"], sum_fields:["amount"]`; add `"month"` for monthly movements. |
+| Inspect GL details | `get_transactions` with `source:"general_ledger", auto_paginate:false, page_size:20`; follow `next_skip`. |
+| Trace a document reference | `resolve_record_links` with explicit resource/reference, then `get_record`; a lookup candidate is not a proven GL source link. |
+| Read account hierarchy | `get_coa_structure` with `page_size:100`; follow `next_cursor` and inspect unknown system settings/group inventory. |
+| Original invoices/payments | `list_records`, `find_record`, `get_record` for the corresponding resource. |
+
+GL results default to a 60,000-character budget before MCP text/structured duplication. An oversized result returns no partial rows/groups, `result_complete:false`, and a concrete `next_request`; raw results also provide `summary_request`. `complete` describes native reading, not delivery of withheld data. Never claim to have reviewed withheld rows. Unknown currency remains unknown: inspect `currency_evidence`, preserve native money objects and obtain original-document/currency-setting evidence before financial conclusions. Mixed evidenced currencies cannot be summed together.
+
+`get_business_information` automatically reads the documented Business Details singleton key when only keyed GET is advertised. A native 404 returns `information_status:native_record_not_found` with chart-verified display identity; an unadvertised interface returns `not_advertised`. Neither verifies legal name, tax ID, base currency or equality of two connections. Permission failures remain errors. Do not invent another singleton key or create settings to make the read succeed. Legacy report tools remain diagnostic only.
+
 ## Mandatory choice of data source
 
 - **Display transactions/documents:** use the corresponding native document collection and form APIs through `list_records`, `find_record`, `get_record`, or an advertised module detail endpoint. Sales invoices use `sales_invoices`, purchase invoices `purchase_invoices`, incoming money `receipts`, outgoing money `payments`, and journals `journal_entries`. Use native document dates, reference, counterparty, currency, total, status and line items. Do not substitute GL posting rows for documents: one document can produce many postings, and some documents do not post at all. Do not infer invoice totals or settlement status from GL amounts. Follow document pages and inspect the form when list fields are missing.

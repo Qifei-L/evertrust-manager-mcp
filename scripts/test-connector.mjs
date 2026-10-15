@@ -30,6 +30,10 @@ assert.equal((await api('/api/connections/'+aid+'/token',{token:'invalid'})).sta
 assert.equal((await rpc('get_accounts',{connection_id:aid})).isError,false);
 assert.equal((await api('/api/connections/'+aid+'/token',{token:'alpha-new'})).status,200);
 assert.equal((await api('/api/connections')).data.connections.find(c=>c.connection_id===aid).label,'Client A');
+const duplicate=await api('/api/connections',{token:'alpha-second',label:'Second ledger'});assert.equal(duplicate.status,200);
+const duplicateId=duplicate.data.connection.connection_id,listed=(await api('/api/connections')).data.connections;
+assert.deepEqual(listed.find(c=>c.connection_id===aid).same_name_connection_ids,[duplicateId]);assert.deepEqual(listed.find(c=>c.connection_id===duplicateId).same_name_connection_ids,[aid]);assert(listed.find(c=>c.connection_id===duplicateId).selection_label.includes(duplicateId));assert.deepEqual(listed.find(c=>c.connection_id===bid).same_name_connection_ids,[]);
+assert.equal((await api('/api/connections/'+duplicateId,{},'owner','DELETE')).status,200);
 blocked=true;assert.equal((await api('/api/connections/'+aid+'/test',{})).data.ok,false);blocked=false;assert.equal((await api('/api/connections/'+aid+'/test',{})).data.ok,true);
 await rpc('get_transactions',{connection_id:aid,from_date:'2026-09-01',to_date:'2026-09-30',page_size:25});assert(requests.at(-1).url.includes('pageSize=25'));assert(!requests.at(-1).url.includes('connection_id'));
 assert.equal((await rpc('get_transactions',{connection_id:aid,from_date:'2026-02-31'})).isError,true);
