@@ -1,6 +1,8 @@
 # Evertrust Books
 
-## Current release: 0.21.0
+## Current release: 0.21.1
+
+The OAuth consent page preserves same-origin form provenance and allows redirects only to its client's registered callback origin. This fixes real-browser authorization submissions being rejected as `Origin:null`; the 303 response still suppresses referrers. CI now covers an actual Chromium form submission and callback, in addition to HTTP/API tests.
 
 - Railway now supports OAuth authorization-code + S256 PKCE, dynamic client registration, owner consent, expiring access tokens, rotating refresh tokens and revocation. Claude: **Sign in now → Register automatically**; ChatGPT: **OAuth / DCR**. Existing Bearer-token connections still work. This remains one owner's company namespace, not employee account isolation. See [Railway authentication](docs/RAILWAY.md#connect).
 - Display transaction documents through the matching native collection/form APIs (`list_records`, `find_record`, `get_record`), preserving original document totals, dates, counterparties, status and lines. GL postings are not transaction documents.

@@ -32,6 +32,8 @@ async function consent(app, client, extra = {}) {
 async function authorize(app, client) {
   const pending = await consent(app, client);
   assert.equal(pending.response.status, 200);
+  assert.equal(pending.response.headers.get('referrer-policy'), 'same-origin');
+  assert.match(pending.response.headers.get('content-security-policy'), /form-action 'self' https:\/\/claude\.example;/);
   assert(pending.text.includes('&lt;Claude &amp; ChatGPT&gt;'));
   assert(!pending.text.includes(password));
   const response = await post(app, '/oauth/authorize', { request_id: pending.id, password, decision: 'allow' }, { Origin: app.origin, Cookie: pending.cookie });
@@ -66,6 +68,7 @@ test('OAuth discovery, DCR, explicit owner consent, PKCE, tool access, rotation 
     const pending = await consent(app, client);
     const args = { request_id: pending.id, password, decision: 'allow' };
     assert.equal((await post(app, '/oauth/authorize', args, { Origin: 'https://evil.example', Cookie: pending.cookie })).status, 403);
+    assert.equal((await post(app, '/oauth/authorize', args, { Origin: 'null', Cookie: pending.cookie })).status, 403);
     assert.equal((await post(app, '/oauth/authorize', args, { Origin: app.origin })).status, 403);
     assert.equal((await post(app, '/oauth/authorize', { ...args, password: 'wrong' }, { Origin: app.origin, Cookie: pending.cookie })).status, 401);
     const code = await authorize(app, client);
@@ -83,7 +86,7 @@ test('OAuth discovery, DCR, explicit owner consent, PKCE, tool access, rotation 
     assert.equal((await fetch(app.origin + '/api/connections', { headers: { Authorization: 'Bearer ' + tokens.access_token } })).status, 401);
     assert.equal((await fetch(app.origin + '/mcp-settings', { headers: { Authorization: 'Bearer ' + tokens.access_token }, redirect: 'manual' })).status, 303);
     const init = await (await mcp(app, tokens.access_token, 'initialize')).json();
-    assert.equal(init.result.serverInfo.version, '0.21.0');
+    assert.equal(init.result.serverInfo.version, '0.21.1');
     assert.match(init.result.instructions, /Mandatory choice of data source/);
     assert.match(init.result.instructions, /Display transactions\/documents/);
     assert.match(init.result.instructions, /Report procedure for the assistant/);

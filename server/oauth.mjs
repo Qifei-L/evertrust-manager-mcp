@@ -29,8 +29,13 @@ export class OwnerOAuth {
     res.end(JSON.stringify(data));
   }
   error(res, error, status = 400) { this.json(res, status, { error }); }
-  page(res, content, cookie) {
-    res.writeHead(200, { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", ...(cookie ? { 'Set-Cookie': cookie } : {}) });
+  page(res, content, cookie, redirectUri) {
+    // A no-referrer form navigation sends Origin:null in real browsers. Keep
+    // same-origin form provenance; suppress referrers again on the 303 callback.
+    // Chromium also checks form-action on redirects, so allow only the origin
+    // of this client's already validated, exactly registered callback.
+    const callbackOrigin = new URL(redirectUri).origin;
+    res.writeHead(200, { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'same-origin', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${callbackOrigin}; frame-ancestors 'none'; base-uri 'none'`, ...(cookie ? { 'Set-Cookie': cookie } : {}) });
     res.end(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Authorize Evertrust Books</title><style>body{font:16px system-ui;max-width:560px;margin:60px auto;padding:24px;color:#242424}input,button{font:inherit;padding:12px;margin:12px 0;box-sizing:border-box}input[type=password]{width:100%}button{cursor:pointer}p{line-height:1.6}code{overflow-wrap:anywhere}</style>${content}</html>`);
   }
   cookie(value, maxAge = 600) { return `evertrust_oauth=${value}; Path=/oauth/authorize; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${this.config.origin.startsWith('https:') ? '; Secure' : ''}`; }
@@ -122,7 +127,7 @@ export class OwnerOAuth {
         const id = secret(), csrf = secret();
         const data = { ...q, resource: this.resource(), scope: 'mcp', csrf: digest(csrf) };
         this.db.prepare('INSERT INTO oauth_pending VALUES (?,?,?)').run(id, JSON.stringify(data), Date.now() + 600000);
-        this.page(res, `<h1>Connect Evertrust Books</h1><p><strong>${escape(client.name)}</strong> requests access to the existing Evertrust Books owner account.</p><p>This permits all available accounting tools, including reads and writes, for all company connections saved by this owner. It does not create a separate user account.</p><p>Return address: <code>${escape(q.redirect_uri)}</code></p><form method="post" action="/oauth/authorize"><input type="hidden" name="request_id" value="${id}">${sessionActive ? '<p>You are signed in as the service owner.</p>' : '<label>Service owner password (APP_AUTH_TOKEN)<input type="password" name="password" required autocomplete="current-password"></label>'}<button name="decision" value="allow">Authorize connection</button> <button name="decision" value="deny" formnovalidate>Cancel</button></form>`, this.cookie(csrf)); return true;
+        this.page(res, `<h1>Connect Evertrust Books</h1><p><strong>${escape(client.name)}</strong> requests access to the existing Evertrust Books owner account.</p><p>This permits all available accounting tools, including reads and writes, for all company connections saved by this owner. It does not create a separate user account.</p><p>Return address: <code>${escape(q.redirect_uri)}</code></p><form method="post" action="/oauth/authorize"><input type="hidden" name="request_id" value="${id}">${sessionActive ? '<p>You are signed in as the service owner.</p>' : '<label>Service owner password (APP_AUTH_TOKEN)<input type="password" name="password" required autocomplete="current-password"></label>'}<button name="decision" value="allow">Authorize connection</button> <button name="decision" value="deny" formnovalidate>Cancel</button></form>`, this.cookie(csrf), q.redirect_uri); return true;
       }
       if (path === '/oauth/authorize' && req.method === 'POST') {
         if (req.headers.origin !== this.config.origin) { this.error(res, 'access_denied', 403); return true; }

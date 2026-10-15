@@ -1,6 +1,6 @@
 {
   "name": "evertrust-books-managerio-mcp",
-  "version": "0.21.0",
+  "version": "0.21.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "dev": "node --env-file=.env server/index.mjs",
     "test": "node scripts/test-all.mjs",
     "test:railway": "node --test tests/railway.test.mjs",
+    "test:browser": "node tests/oauth-browser.mjs",
     "validate": "node scripts/validate-artifact.mjs"
   },
   "engines": {
